@@ -5,7 +5,7 @@ import 'dashboard_screen.dart';
 import 'depolar_screen.dart';
 import 'kamyonlar_screen.dart';
 import 'magazalar_screen.dart';
-import 'siparisler_screen.dart';
+import 'products_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
   const AdminHomeScreen({super.key});
@@ -39,8 +39,8 @@ class AdminHomeScreen extends StatelessWidget {
           ),
           _buildButton(
             context,
-            title: "📄 Tüm Siparişler",
-            destination: const AdminSiparislerScreen(),
+            title: " 🛍️ Ürünler ",
+            destination: const AdminProductsScreen(),
           ),
           _buildButton(
             context, 
