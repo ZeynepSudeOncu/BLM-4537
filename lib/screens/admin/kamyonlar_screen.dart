@@ -1,7 +1,35 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'kamyon_duzenle_screen.dart';
+
+class Truck {
+  final String id;
+  final String plate;
+  final String model;
+  final int capacity;
+  final bool isActive;
+
+  Truck({
+    required this.id,
+    required this.plate,
+    required this.model,
+    required this.capacity,
+    required this.isActive,
+  });
+
+  factory Truck.fromJson(Map<String, dynamic> json) {
+  return Truck(
+    id: json["id"]?.toString() ?? "",
+    plate: json["plate"] ?? "",
+    model: json["model"] ?? "",
+    capacity: json["capacity"] ?? 0,
+    isActive: json["isActive"] ?? false, 
+  );
+}
+
+}
 
 class KamyonlarScreen extends StatefulWidget {
   const KamyonlarScreen({super.key});
@@ -11,7 +39,7 @@ class KamyonlarScreen extends StatefulWidget {
 }
 
 class _KamyonlarScreenState extends State<KamyonlarScreen> {
-  List<Map<String, dynamic>> trucks = [];
+  List<Truck> trucks = [];
   bool loading = true;
 
   @override
@@ -21,38 +49,29 @@ class _KamyonlarScreenState extends State<KamyonlarScreen> {
   }
 
   Future<void> fetchTrucks() async {
-    setState(() => loading = true);
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = prefs.getString("token");
 
-    final response = await http.get(
-      Uri.parse('http://localhost:5144/api/trucks'),
+    final res = await http.get(
+      Uri.parse("http://localhost:5144/api/Trucks"),
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
+        "Authorization": "Bearer $token",
       },
     );
 
-    if (response.statusCode == 200) {
-      final List<dynamic> jsonList = jsonDecode(response.body);
-      setState(() {
-        trucks = List<Map<String, dynamic>>.from(jsonList);
-        loading = false;
-      });
-    } else {
-      setState(() => loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Kamyonlar alınamadı (${response.statusCode})')),
-      );
-    }
+    final List list = json.decode(res.body);
+    setState(() {
+      trucks = list.map((e) => Truck.fromJson(e)).toList();
+      loading = false;
+    });
   }
 
   Future<void> deleteTruck(String id) async {
-    final confirmed = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Silme Onayı"),
-        content: const Text("Bu kamyonu silmek istediğinize emin misiniz?"),
+        title: const Text("Emin misiniz?"),
+        content: const Text("Bu kamyonu silmek istiyor musunuz?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("İptal")),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Sil")),
@@ -60,67 +79,75 @@ class _KamyonlarScreenState extends State<KamyonlarScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (ok != true) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = prefs.getString("token");
 
-    final response = await http.delete(
-      Uri.parse('http://localhost:5144/api/trucks/$id'),
+    await http.delete(
+      Uri.parse("http://localhost:5144/api/Trucks/$id"),
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
+        "Authorization": "Bearer $token",
       },
     );
 
-    if (response.statusCode == 200) {
-      setState(() {
-        trucks.removeWhere((t) => t['id'] == id);
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Silme başarısız: ${response.statusCode}')),
-      );
-    }
+    setState(() => trucks.removeWhere((t) => t.id == id));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tüm Kamyonlar'),
+        title: const Text("Tüm Kamyonlar"),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Yeni Kamyon Ekle (yakında)')),
-              );
+              Navigator.pushNamed(context, "/admin/kamyonlar/yeni");
             },
           ),
         ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : trucks.isEmpty
-              ? const Center(child: Text("Kamyon bulunamadı."))
-              : ListView.builder(
-                  itemCount: trucks.length,
-                  itemBuilder: (context, index) {
-                    final truck = trucks[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: ListTile(
-                        title: Text('${truck['plate']} - ${truck['model']}'),
-                        subtitle: Text('Kapasite: ${truck['capacity']} ton\nDurum: ${truck['status']}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => deleteTruck(truck['id']),
+          : SingleChildScrollView(
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text("Plaka")),
+                  DataColumn(label: Text("Model")),
+                  DataColumn(label: Text("Kapasite")),
+                  DataColumn(label: Text("Durum")),
+                  DataColumn(label: Text("İşlemler")),
+                ],
+                rows: trucks.map((k) {
+                  return DataRow(cells: [
+                    DataCell(Text(k.plate)),
+                    DataCell(Text(k.model)),
+                    DataCell(Text(k.capacity.toString())),
+                    DataCell(Text(k.isActive ? "Aktif" : "Pasif")),
+                    DataCell(Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => KamyonDuzenleScreen(id: k.id),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => deleteTruck(k.id),
+                        ),
+                      ],
+                    )),
+                  ]);
+                }).toList(),
+              ),
+            ),
     );
   }
 }

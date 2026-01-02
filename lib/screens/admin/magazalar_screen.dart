@@ -1,7 +1,35 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'magaza_ekle_screen.dart';
+import 'magaza_duzenle_screen.dart';
+
+class Store {
+  final String id;
+  final String name;
+  final String address;
+  final String phone;
+  final bool isActive;
+
+  Store({
+    required this.id,
+    required this.name,
+    required this.address,
+    required this.phone,
+    required this.isActive,
+  });
+
+  factory Store.fromJson(Map<String, dynamic> json) {
+    return Store(
+      id: json["id"],
+      name: json["name"] ?? "",
+      address: json["address"] ?? "",
+      phone: json["phone"] ?? "",
+      isActive: json["isActive"] ?? false, // 🔥 null-safe
+    );
+  }
+}
 
 class MagazalarScreen extends StatefulWidget {
   const MagazalarScreen({super.key});
@@ -11,7 +39,7 @@ class MagazalarScreen extends StatefulWidget {
 }
 
 class _MagazalarScreenState extends State<MagazalarScreen> {
-  List<Map<String, dynamic>> stores = [];
+  List<Store> stores = [];
   bool loading = true;
 
   @override
@@ -21,38 +49,27 @@ class _MagazalarScreenState extends State<MagazalarScreen> {
   }
 
   Future<void> fetchStores() async {
-    setState(() => loading = true);
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = prefs.getString("token");
 
-    final response = await http.get(
-      Uri.parse('http://localhost:5144/api/stores'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+    final res = await http.get(
+      Uri.parse("http://localhost:5144/api/stores"),
+      headers: {"Authorization": "Bearer $token"},
     );
 
-    if (response.statusCode == 200) {
-      final List<dynamic> jsonList = jsonDecode(response.body);
-      setState(() {
-        stores = List<Map<String, dynamic>>.from(jsonList);
-        loading = false;
-      });
-    } else {
-      setState(() => loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Mağazalar alınamadı (${response.statusCode})')),
-      );
-    }
+    final List list = json.decode(res.body);
+    setState(() {
+      stores = list.map((e) => Store.fromJson(e)).toList();
+      loading = false;
+    });
   }
 
   Future<void> deleteStore(String id) async {
-    final confirmed = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Silme Onayı"),
-        content: const Text("Bu mağazayı kapatmak istediğinize emin misiniz?"),
+        title: const Text("Emin misiniz?"),
+        content: const Text("Bu mağazayı kapatmak istiyor musunuz?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("İptal")),
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Kapat")),
@@ -60,74 +77,76 @@ class _MagazalarScreenState extends State<MagazalarScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (ok != true) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = prefs.getString("token");
 
-    final response = await http.delete(
-      Uri.parse('http://localhost:5144/api/stores/$id'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+    await http.delete(
+      Uri.parse("http://localhost:5144/api/stores/$id"),
+      headers: {"Authorization": "Bearer $token"},
     );
 
-    if (response.statusCode == 200) {
-      setState(() {
-        stores.removeWhere((m) => m['id'] == id);
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Silme başarısız: ${response.statusCode}')),
-      );
-    }
+    setState(() => stores.removeWhere((s) => s.id == id));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tüm Mağazalar'),
+        title: const Text("Tüm Mağazalar"),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Yeni Mağaza Ekle (yakında)')),
-              );
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MagazaEkleScreen()),
+              ).then((_) => fetchStores());
             },
-          ),
+          )
         ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : stores.isEmpty
-              ? const Center(child: Text("Mağaza bulunamadı."))
-              : ListView.builder(
-                  itemCount: stores.length,
-                  itemBuilder: (context, index) {
-                    final magaza = stores[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: ListTile(
-                        title: Text(magaza['name']),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Adres: ${magaza['address']}"),
-                            Text("Telefon: ${magaza['phone']}"),
-                            Text("Durum: ${magaza['isActive'] ? 'Aktif' : 'Pasif'}"),
-                          ],
+          : SingleChildScrollView(
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text("Ad")),
+                  DataColumn(label: Text("Adres")),
+                  DataColumn(label: Text("Telefon")),
+                  DataColumn(label: Text("Durum")),
+                  DataColumn(label: Text("İşlemler")),
+                ],
+                rows: stores.map((m) {
+                  return DataRow(cells: [
+                    DataCell(Text(m.name)),
+                    DataCell(Text(m.address)),
+                    DataCell(Text(m.phone)),
+                    DataCell(Text(m.isActive ? "Aktif" : "Pasif")),
+                    DataCell(Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => MagazaDuzenleScreen(id: m.id),
+                              ),
+                            ).then((_) => fetchStores());
+                          },
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: () => deleteStore(magaza['id']),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => deleteStore(m.id),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      ],
+                    )),
+                  ]);
+                }).toList(),
+              ),
+            ),
     );
   }
 }
